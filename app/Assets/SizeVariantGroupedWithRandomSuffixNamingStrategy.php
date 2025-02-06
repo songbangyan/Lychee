@@ -1,13 +1,20 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Assets;
 
+use App\Enum\SizeVariantType;
+use App\Enum\StorageDiskType;
 use App\Exceptions\InsufficientEntropyException;
-use App\Exceptions\Internal\InvalidSizeVariantException;
 use App\Exceptions\Internal\LycheeAssertionError;
-use App\Image\FlysystemFile;
+use App\Image\Files\FlysystemFile;
 use App\Models\Photo;
-use App\Models\SizeVariant;
+use Illuminate\Support\Facades\Storage;
 use Safe\Exceptions\PcreException;
 
 /**
@@ -18,21 +25,8 @@ use Safe\Exceptions\PcreException;
  * Size variants which belong to the same photo share the same random
  * end section.
  */
-class SizeVariantGroupedWithRandomSuffixNamingStrategy extends SizeVariantBaseNamingStrategy
+class SizeVariantGroupedWithRandomSuffixNamingStrategy extends BaseSizeVariantNamingStrategy
 {
-	/**
-	 * Maps a size variant to the path prefix (directory) where the file for that size variant is stored.
-	 */
-	public const VARIANT_2_PATH_PREFIX = [
-		SizeVariant::THUMB => 'thumb',
-		SizeVariant::THUMB2X => 'thumb2x',
-		SizeVariant::SMALL => 'small',
-		SizeVariant::SMALL2X => 'small2x',
-		SizeVariant::MEDIUM => 'medium',
-		SizeVariant::MEDIUM2X => 'medium2x',
-		SizeVariant::ORIGINAL => 'original',
-	];
-
 	/**
 	 * The length of the random file name without file extension.
 	 *
@@ -106,7 +100,7 @@ class SizeVariantGroupedWithRandomSuffixNamingStrategy extends SizeVariantBaseNa
 				// at the beginning.
 				if (\Safe\preg_match(
 					'#^\.?[/\\\\]?' .
-					self::VARIANT_2_PATH_PREFIX[SizeVariant::ORIGINAL] . '[/\\\\]' .
+					SizeVariantType::ORIGINAL->name() . '[/\\\\]' .
 					'([0-9a-f]{2})[/\\\\]' .
 					'([0-9a-f]{2})[/\\\\]' .
 					'([0-9a-f]{' . (self::NAME_LENGTH - 4) . '})\.#i',
@@ -118,31 +112,32 @@ class SizeVariantGroupedWithRandomSuffixNamingStrategy extends SizeVariantBaseNa
 					$this->cachedRndMiddlePath = $matches[1] . DIRECTORY_SEPARATOR . $matches[2] . DIRECTORY_SEPARATOR . $matches[3];
 				} else {
 					// If we don't have a match, we create a new random base path.
+					// @codeCoverageIgnoreStart
 					$this->cachedRndMiddlePath = self::createRndMiddlePath();
+					// @codeCoverageIgnoreEnd
 				}
 			} else {
 				$this->cachedRndMiddlePath = self::createRndMiddlePath();
 			}
+			// @codeCoverageIgnoreStart
 		} catch (PcreException $e) {
 			throw LycheeAssertionError::createFromUnexpectedException($e);
 		}
+		// @codeCoverageIgnoreEnd
 	}
 
 	/**
 	 * {@inheritDoc}
 	 */
-	public function createFile(int $sizeVariant): FlysystemFile
+	public function createFile(SizeVariantType $sizeVariant, bool $isBackup = false): FlysystemFile
 	{
-		if (SizeVariant::ORIGINAL > $sizeVariant || $sizeVariant > SizeVariant::THUMB) {
-			throw new InvalidSizeVariantException('invalid $sizeVariant = ' . $sizeVariant);
-		}
-
 		$relativePath =
-			self::VARIANT_2_PATH_PREFIX[$sizeVariant] . DIRECTORY_SEPARATOR .
+			$sizeVariant->name() . DIRECTORY_SEPARATOR .
 			$this->cachedRndMiddlePath .
+			($isBackup ? '_orig' : '') .
 			$this->generateExtension($sizeVariant);
 
-		return new FlysystemFile(parent::getImageDisk(), $relativePath);
+		return new FlysystemFile(Storage::disk(StorageDiskType::LOCAL->value), $relativePath);
 	}
 
 	/**
@@ -156,13 +151,15 @@ class SizeVariantGroupedWithRandomSuffixNamingStrategy extends SizeVariantBaseNa
 			$rndStr = bin2hex(random_bytes(self::NAME_LENGTH / 2));
 
 			return
-				\Safe\substr($rndStr, 0, 2) .
+				substr($rndStr, 0, 2) .
 				DIRECTORY_SEPARATOR .
-				\Safe\substr($rndStr, 2, 2) .
+				substr($rndStr, 2, 2) .
 				DIRECTORY_SEPARATOR .
-				\Safe\substr($rndStr, 4);
+				substr($rndStr, 4);
+			// @codeCoverageIgnoreStart
 		} catch (\Exception $e) {
 			throw new InsufficientEntropyException($e);
 		}
+		// @codeCoverageIgnoreEnd
 	}
 }

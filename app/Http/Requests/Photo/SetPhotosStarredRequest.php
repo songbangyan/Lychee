@@ -1,9 +1,16 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Http\Requests\Photo;
 
+use App\Contracts\Http\Requests\HasPhotos;
+use App\Contracts\Http\Requests\RequestAttribute;
 use App\Http\Requests\BaseApiRequest;
-use App\Http\Requests\Contracts\HasPhotos;
 use App\Http\Requests\Traits\Authorize\AuthorizeCanEditPhotosTrait;
 use App\Http\Requests\Traits\HasPhotosTrait;
 use App\Models\Photo;
@@ -27,9 +34,9 @@ class SetPhotosStarredRequest extends BaseApiRequest implements HasPhotos
 	public function rules(): array
 	{
 		return [
-			HasPhotos::PHOTO_IDS_ATTRIBUTE => 'required|array|min:1',
-			HasPhotos::PHOTO_IDS_ATTRIBUTE . '.*' => ['required', new RandomIDRule(false)],
-			self::IS_STARRED_ATTRIBUTE => 'required|boolean',
+			RequestAttribute::PHOTO_IDS_ATTRIBUTE => 'required|array|min:1',
+			RequestAttribute::PHOTO_IDS_ATTRIBUTE . '.*' => ['required', new RandomIDRule(false)],
+			RequestAttribute::IS_STARRED_ATTRIBUTE => 'required|boolean',
 		];
 	}
 
@@ -38,8 +45,10 @@ class SetPhotosStarredRequest extends BaseApiRequest implements HasPhotos
 	 */
 	protected function processValidatedValues(array $values, array $files): void
 	{
-		$this->photos = Photo::query()->findOrFail($values[HasPhotos::PHOTO_IDS_ATTRIBUTE]);
-		$this->isStarred = static::toBoolean($values[self::IS_STARRED_ATTRIBUTE]);
+		/** @var array<int,string> $photosIDs */
+		$photosIDs = $values[RequestAttribute::PHOTO_IDS_ATTRIBUTE];
+		$this->photos = Photo::query()->findOrFail($photosIDs);
+		$this->isStarred = static::toBoolean($values[RequestAttribute::IS_STARRED_ATTRIBUTE]);
 	}
 
 	public function isStarred(): bool

@@ -1,43 +1,36 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Policies;
 
 use App\Models\User;
-use Illuminate\Auth\Access\HandlesAuthorization;
 
-class UserPolicy
+/**
+ * This class has a DUAL purpose:.
+ *
+ * 1. Define the Rights of the current user over managing Users.
+ * 2. Define the Rights of the current user with regard to what it can modify on its profile.
+ */
+class UserPolicy extends BasePolicy
 {
-	use HandlesAuthorization;
+	public const CAN_EDIT = 'canEdit';
+	public const CAN_CREATE_OR_EDIT_OR_DELETE = 'canCreateOrEditOrDelete';
+	public const CAN_LIST = 'canList';
 
-	public const IS_ADMIN = 'isAdmin';
-	public const CAN_UPLOAD = 'canUpload';
-	public const CAN_EDIT_SETTINGS = 'canEditSettings';
-
-	/**
-	 * Perform pre-authorization checks.
-	 *
-	 * @param \App\Models\User $user
-	 * @param string           $ability
-	 *
-	 * @return void|bool
-	 */
-	public function before(?User $user, $ability)
+	public function canCreateOrEditOrDelete(User $user): bool
 	{
-		if ($this->isAdmin($user)) {
-			return true;
-		}
+		// Note, the administrator is already handled in the `before()` method and every one else is not allowed to create/delete users.
+		return false;
 	}
 
-	/**
-	 * This defines if the user is admin.
-	 *
-	 * @param User|null $user
-	 *
-	 * @return bool
-	 */
-	public function isAdmin(?User $user): bool
+	public function canList(User $user): bool
 	{
-		return $user?->id === 0;
+		return $user->may_upload;
 	}
 
 	/**
@@ -47,20 +40,8 @@ class UserPolicy
 	 *
 	 * @return bool
 	 */
-	public function canEditSettings(User $user): bool
+	public function canEdit(User $user): bool
 	{
-		return !$user->is_locked;
-	}
-
-	/**
-	 * This defines if user has upload rights.
-	 *
-	 * @param User $user
-	 *
-	 * @return bool
-	 */
-	public function canUpload(User $user): bool
-	{
-		return $user->may_upload;
+		return $user->may_edit_own_settings;
 	}
 }

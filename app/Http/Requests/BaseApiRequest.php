@@ -1,8 +1,14 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Http\Requests;
 
-use App\Contracts\LycheeException;
+use App\Contracts\Exceptions\LycheeException;
 use App\Exceptions\Internal\FrameworkException;
 use App\Exceptions\Internal\InvalidSmartIdException;
 use App\Exceptions\Internal\QueryBuilderException;
@@ -15,14 +21,19 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use LycheeVerify\Contract\VerifyInterface;
+use LycheeVerify\Verify;
 use Symfony\Component\HttpFoundation\Exception\BadRequestException;
 
 abstract class BaseApiRequest extends FormRequest
 {
 	protected AlbumFactory $albumFactory;
+	protected VerifyInterface $verify;
 
 	/**
 	 * @throws FrameworkException
+	 *
+	 * @phpstan-ignore-next-line
 	 */
 	public function __construct(
 		array $query = [],
@@ -31,10 +42,11 @@ abstract class BaseApiRequest extends FormRequest
 		array $cookies = [],
 		array $files = [],
 		array $server = [],
-		$content = null
+		$content = null,
 	) {
 		try {
 			$this->albumFactory = resolve(AlbumFactory::class);
+			$this->verify = resolve(Verify::class);
 			parent::__construct($query, $request, $attributes, $cookies, $files, $server, $content);
 		} catch (BindingResolutionException $e) {
 			throw new FrameworkException('Laravel\'s provider component', $e);
@@ -141,15 +153,15 @@ abstract class BaseApiRequest extends FormRequest
 	/**
 	 * Returns the validation rules that apply to the request.
 	 *
-	 * @return array
+	 * @return array<string,string|array<int,string|\Illuminate\Contracts\Validation\ValidationRule|\Illuminate\Validation\Rules\Enum>>
 	 */
 	abstract public function rules(): array;
 
 	/**
 	 * Post-processes the validated values.
 	 *
-	 * @param array          $values
-	 * @param UploadedFile[] $files
+	 * @param array<string,mixed> $values
+	 * @param UploadedFile[]      $files
 	 *
 	 * @return void
 	 *

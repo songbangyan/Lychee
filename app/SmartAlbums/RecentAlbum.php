@@ -1,7 +1,14 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\SmartAlbums;
 
+use App\Enum\SmartAlbumType;
 use App\Exceptions\ConfigurationKeyMissingException;
 use App\Exceptions\Internal\FrameworkException;
 use App\Models\Configs;
@@ -13,8 +20,7 @@ use Illuminate\Support\Carbon;
 class RecentAlbum extends BaseSmartAlbum
 {
 	private static ?self $instance = null;
-	public const ID = 'recent';
-	public const TITLE = 'Recent';
+	public const ID = SmartAlbumType::RECENT->value;
 
 	/**
 	 * @throws InvalidFormatException
@@ -29,9 +35,7 @@ class RecentAlbum extends BaseSmartAlbum
 		);
 
 		parent::__construct(
-			self::ID,
-			self::TITLE,
-			Configs::getValueAsBool('public_recent'),
+			SmartAlbumType::RECENT,
 			function (Builder $query) use ($strRecent) {
 				$query->where('photos.created_at', '>=', $strRecent);
 			}

@@ -1,8 +1,14 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Actions\RSS;
 
-use App\Contracts\InternalLycheeException;
+use App\Contracts\Exceptions\InternalLycheeException;
 use App\Exceptions\Internal\FrameworkException;
 use App\Models\Configs;
 use App\Models\Photo;
@@ -25,7 +31,7 @@ class Generate
 	private function create_link_to_page(Photo $photo_model): string
 	{
 		if ($photo_model->album_id !== null) {
-			return url('/#' . $photo_model->album_id . '/' . $photo_model->id);
+			return url('/gallery/' . $photo_model->album_id . '/' . $photo_model->id);
 		}
 
 		return url('/view?p=' . $photo_model->id);
@@ -51,7 +57,7 @@ class Generate
 	}
 
 	/**
-	 * @return Collection<FeedItem>
+	 * @return Collection<int,FeedItem>
 	 *
 	 * @throws InternalLycheeException
 	 */
@@ -65,9 +71,12 @@ class Generate
 			throw new FrameworkException('Date/Time component (Carbon)', $e);
 		}
 
+		/** @var Collection<int,Photo> $photos */
 		$photos = $this->photoQueryPolicy
 			->applySearchabilityFilter(
-				Photo::with(['album', 'owner', 'size_variants', 'size_variants.sym_links'])
+				query: Photo::query()->with(['album', 'owner', 'size_variants', 'size_variants.sym_links']),
+				origin: null,
+				include_nsfw: !Configs::getValueAsBool('hide_nsfw_in_rss')
 			)
 			->where('photos.created_at', '>=', $nowMinus)
 			->limit($rss_max)

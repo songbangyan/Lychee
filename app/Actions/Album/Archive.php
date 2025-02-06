@@ -1,32 +1,35 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Actions\Album;
 
-use App\Contracts\AbstractAlbum;
+use App\Contracts\Models\AbstractAlbum;
 use App\Exceptions\ConfigurationKeyMissingException;
 use App\Exceptions\Handler;
 use App\Exceptions\Internal\FrameworkException;
 use App\Models\Album;
 use App\Models\Configs;
-use App\Models\Extensions\BaseAlbum;
 use App\Models\Photo;
 use App\Models\TagAlbum;
 use App\Policies\AlbumPolicy;
 use App\Policies\PhotoPolicy;
 use App\SmartAlbums\BaseSmartAlbum;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Safe\Exceptions\InfoException;
 use function Safe\ini_get;
 use function Safe\set_time_limit;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use ZipStream\CompressionMethod as ZipMethod;
 use ZipStream\Exception\FileNotFoundException;
 use ZipStream\Exception\FileNotReadableException;
-use ZipStream\Option\Archive as ZipArchiveOption;
-use ZipStream\Option\File as ZipFileOption;
-use ZipStream\Option\Method as ZipMethod;
 use ZipStream\ZipStream;
 
 class Archive extends Action
@@ -42,7 +45,7 @@ class Archive extends Action
 	protected int $deflateLevel = -1;
 
 	/**
-	 * @param Collection<AbstractAlbum> $albums
+	 * @param Collection<int,AbstractAlbum> $albums
 	 *
 	 * @return StreamedResponse
 	 *
@@ -51,13 +54,22 @@ class Archive extends Action
 	 */
 	public function do(Collection $albums): StreamedResponse
 	{
+		// Issue #1950: Setting Model::shouldBeStrict(); in /app/Providers/AppServiceProvider.php breaks recursive album download.
+		//
+		// From my understanding it is because when we query an album with it's relations (photos & children),
+		// the relations of the children are not populated.
+		// As a result, when we try to query the picture list of those, it breaks.
+		// In that specific case, it is better to simply disable Model::shouldBeStrict() and eat the recursive SQL queries:
+		// for this specific case we must allow lazy loading.
+		Model::shouldBeStrict(false);
+
 		$this->deflateLevel = Configs::getValueAsInt('zip_deflate_level');
 
 		$responseGenerator = function () use ($albums) {
-			$options = new ZipArchiveOption();
-			$options->setEnableZip64(Configs::getValueAsBool('zip64'));
-			$options->setZeroHeader(true);
-			$zip = new ZipStream(null, $options);
+			$zip = new ZipStream(defaultCompressionMethod: $this->deflateLevel === -1 ? ZipMethod::STORE : ZipMethod::DEFLATE,
+				defaultDeflateLevel: $this->deflateLevel,
+				enableZip64: Configs::getValueAsBool('zip64'),
+				defaultEnableZeroHeader: true, sendHttpHeaders: false);
 
 			$usedDirNames = [];
 			foreach ($albums as $album) {
@@ -84,15 +96,21 @@ class Archive extends Action
 			$response->headers->set('Cache-Control', 'no-cache, no-store, must-revalidate');
 			$response->headers->set('Pragma', 'no-cache');
 			$response->headers->set('Expires', '0');
+			// @codeCoverageIgnoreStart
 		} catch (\InvalidArgumentException $e) {
 			throw new FrameworkException('Symfony\'s response component', $e);
 		}
+		// @codeCoverageIgnoreEnd
 
 		return $response;
 	}
 
 	/**
 	 * Create the title of the ZIP archive.
+	 *
+	 * @param Collection<int,AbstractAlbum> $albums
+	 *
+	 * @return string
 	 */
 	private static function createZipTitle(Collection $albums): string
 	{
@@ -115,6 +133,7 @@ class Archive extends Action
 	private static function createValidTitle(string $title): string
 	{
 		$validTitle = str_replace(self::BAD_CHARS, '', $title);
+		$validTitle = pathinfo($validTitle, PATHINFO_FILENAME);
 
 		return $validTitle !== '' ? $validTitle : 'Untitled';
 	}
@@ -169,7 +188,7 @@ class Archive extends Action
 	{
 		$fullNameOfParent = $fullNameOfParent ?? '';
 
-		if (!self::isArchivable($album)) {
+		if (!Gate::check(AlbumPolicy::CAN_DOWNLOAD, [AbstractAlbum::class, $album])) {
 			return;
 		}
 
@@ -208,14 +227,7 @@ class Archive extends Action
 				} catch (InfoException) {
 					// Silently do nothing, if `set_time_limit` is denied.
 				}
-				$zipFileOption = new ZipFileOption();
-				$zipFileOption->setMethod($this->deflateLevel === -1 ? ZipMethod::STORE() : ZipMethod::DEFLATE());
-				$zipFileOption->setDeflateLevel($this->deflateLevel);
-				$zipFileOption->setComment($photo->title);
-				if ($photo->taken_at !== null) {
-					$zipFileOption->setTime($photo->taken_at);
-				}
-				$zip->addFileFromStream($fileName, $file->read(), $zipFileOption);
+				$zip->addFileFromStream(fileName: $fileName, stream: $file->read(), comment: $photo->title, lastModificationDateTime: $photo->taken_at);
 				$file->close();
 			} catch (\Throwable $e) {
 				Handler::reportSafely($e);
@@ -235,20 +247,5 @@ class Archive extends Action
 				}
 			}
 		}
-	}
-
-	/**
-	 * Tests whether the given album may be archived by the current user.
-	 *
-	 * @param AbstractAlbum $album
-	 *
-	 * @return bool
-	 */
-	private static function isArchivable(AbstractAlbum $album): bool
-	{
-		return
-			$album->is_downloadable ||
-			($album instanceof BaseSmartAlbum && Auth::check()) ||
-			($album instanceof BaseAlbum && Gate::check(AlbumPolicy::IS_OWNER, $album));
 	}
 }

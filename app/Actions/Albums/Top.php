@@ -1,10 +1,18 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Actions\Albums;
 
-use App\Contracts\InternalLycheeException;
+use App\Contracts\Exceptions\InternalLycheeException;
 use App\DTO\AlbumSortingCriterion;
-use App\DTO\TopAlbums;
+use App\DTO\TopAlbumDTO;
+use App\Enum\ColumnSortingType;
+use App\Enum\OrderSortingType;
 use App\Exceptions\ConfigurationKeyMissingException;
 use App\Exceptions\Internal\InvalidOrderDirectionException;
 use App\Factories\AlbumFactory;
@@ -14,11 +22,9 @@ use App\Models\TagAlbum;
 use App\Policies\AlbumPolicy;
 use App\Policies\AlbumQueryPolicy;
 use App\SmartAlbums\BaseSmartAlbum;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Collection as BaseCollection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
-use Kalnoy\Nestedset\QueryBuilder as NsQueryBuilder;
 
 class Top
 {
@@ -52,55 +58,58 @@ class Top
 	 * Note, the result may include password-protected albums that are not
 	 * accessible (but are visible).
 	 *
-	 * @return TopAlbums
+	 * @return TopAlbumDTO
 	 *
 	 * @throws InternalLycheeException
 	 */
-	public function get(): TopAlbums
+	public function get(): TopAlbumDTO
 	{
 		// Do not eagerly load the relation `photos` for each smart album.
 		// On the albums overview, we only need a thumbnail for each album.
-		/** @var Collection<BaseSmartAlbum> $smartAlbums */
+		/** @var BaseCollection<int,BaseSmartAlbum> $smartAlbums */
 		$smartAlbums = $this->albumFactory
 			->getAllBuiltInSmartAlbums(false)
-			->map(
-				fn ($smartAlbum) => Gate::check(AlbumPolicy::IS_VISIBLE, $smartAlbum) ? $smartAlbum : null
-			);
+			->filter(fn ($smartAlbum) => Gate::check(AlbumPolicy::CAN_SEE, $smartAlbum));
 
 		$tagAlbumQuery = $this->albumQueryPolicy
-			->applyVisibilityFilter(TagAlbum::query());
-		/** @var Collection<TagAlbum> $tagAlbums */
+			->applyVisibilityFilter(TagAlbum::query()->with(['access_permissions', 'owner']));
+
+		/** @var BaseCollection<int,TagAlbum> $tagAlbums */
+		/** @phpstan-ignore-next-line */
 		$tagAlbums = (new SortingDecorator($tagAlbumQuery))
 			->orderBy($this->sorting->column, $this->sorting->order)
 			->get();
 
-		/** @var NsQueryBuilder $query */
+		/** @return AlbumBuilder $query */
 		$query = $this->albumQueryPolicy
-			->applyVisibilityFilter(Album::query()->whereIsRoot());
+			->applyVisibilityFilter(Album::query()->with(['access_permissions', 'owner'])->whereIsRoot());
 
 		$userID = Auth::id();
 		if ($userID !== null) {
 			// For authenticated users we group albums by ownership.
+			/** @phpstan-ignore-next-line */
 			$albums = (new SortingDecorator($query))
-				->orderBy('owner_id')
+				->orderBy(ColumnSortingType::OWNER_ID, OrderSortingType::ASC)
 				->orderBy($this->sorting->column, $this->sorting->order)
 				->get();
 
 			/**
-			 * @var BaseCollection<Album> $a
-			 * @var BaseCollection<Album> $b
+			 * @var BaseCollection<int,Album> $a
+			 * @var BaseCollection<int,Album> $b
 			 */
 			list($a, $b) = $albums->partition(fn ($album) => $album->owner_id === $userID);
 
-			return new TopAlbums($smartAlbums, $tagAlbums, $a->values(), $b->values());
+			return new TopAlbumDTO($smartAlbums, $tagAlbums, $a->values(), $b->values());
 		} else {
 			// For anonymous users we don't want to implicitly expose
 			// ownership via sorting.
+			/** @var BaseCollection<int,Album> */
+			/** @phpstan-ignore-next-line */
 			$albums = (new SortingDecorator($query))
 				->orderBy($this->sorting->column, $this->sorting->order)
 				->get();
 
-			return new TopAlbums($smartAlbums, $tagAlbums, $albums);
+			return new TopAlbumDTO($smartAlbums, $tagAlbums, $albums);
 		}
 	}
 }

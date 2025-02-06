@@ -1,5 +1,11 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 use Carbon\Carbon;
 use Carbon\Exceptions\InvalidFormatException;
 use Illuminate\Database\Migrations\Migration;
@@ -7,15 +13,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-class DropPageSupport extends Migration
-{
+return new class() extends Migration {
 	private const SQL_TIMEZONE_NAME = 'UTC';
 	private const SQL_DATETIME_FORMAT = 'Y-m-d H:i:s';
 
 	/**
 	 * Run the migrations.
-	 *
-	 * @return void
 	 */
 	public function up(): void
 	{
@@ -25,8 +28,6 @@ class DropPageSupport extends Migration
 
 	/**
 	 * Reverse the migrations.
-	 *
-	 * @return void
 	 *
 	 * @throws InvalidFormatException
 	 */
@@ -75,4 +76,4 @@ class DropPageSupport extends Migration
 			$table->dateTime('updated_at', 0)->nullable(false);
 		});
 	}
-}
+};
