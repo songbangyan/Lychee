@@ -1,36 +1,36 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 use App\Exceptions\ModelDBException;
-use App\Models\Configs;
-use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-class MigrateAdminUser extends Migration
-{
+return new class() extends Migration {
 	/**
 	 * Run the migrations.
-	 *
-	 * @return void
 	 *
 	 * @throws ModelDBException
 	 */
 	public function up(): void
 	{
-		$user = User::query()->findOrNew(0);
-		$user->incrementing = false; // disable auto-generation of ID
-		$user->id = 0;
-		Configs::invalidateCache();
-		$user->username = Configs::getValueAsString('username', '');
-		$user->password = Configs::getValueAsString('password', '');
-		$user->save();
+		$username = DB::table('configs')->select('value')->where('key', 'username')->first();
+		$password = DB::table('configs')->select('value')->where('key', 'password')->first();
+
+		DB::table('users')->updateOrInsert(['id' => 0],
+			[
+				'username' => $username?->value ?? '',
+				'password' => $password?->value ?? '',
+			]);
 	}
 
 	/**
 	 * Reverse the migrations.
-	 *
-	 * @return void
 	 *
 	 * @throws InvalidArgumentException
 	 */
@@ -42,4 +42,4 @@ class MigrateAdminUser extends Migration
 				->delete();
 		}
 	}
-}
+};

@@ -1,26 +1,28 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\DTO;
 
-class ImageDimension extends DTO
+class ImageDimension extends ArrayableDTO
 {
-	public int $width;
-	public int $height;
-
-	public function __construct(int $width, int $height)
-	{
-		$this->width = $width;
-		$this->height = $height;
+	public function __construct(
+		public int $width,
+		public int $height,
+	) {
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * Return the ratio given width and height.
+	 *
+	 * @return float
 	 */
-	public function toArray(): array
+	public function getRatio(): float
 	{
-		return [
-			'width' => $this->width,
-			'height' => $this->height,
-		];
+		return $this->height > 0 ? $this->width / $this->height : 0;
 	}
 }

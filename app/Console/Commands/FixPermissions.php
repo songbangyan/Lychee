@@ -1,13 +1,20 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Console\Commands;
 
-use App\Actions\Diagnostics\Checks\BasicPermissionCheck;
+use App\Actions\Diagnostics\Pipes\Checks\BasicPermissionCheck;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 use function Safe\chmod;
+use Safe\Exceptions\FilesystemException;
 use function Safe\fileowner;
-use function Safe\sprintf;
+use function Safe\fileperms;
 use Symfony\Component\Console\Exception\InvalidArgumentException;
 
 class FixPermissions extends Command
@@ -89,11 +96,6 @@ class FixPermissions extends Command
 	{
 		try {
 			$actualPerm = fileperms($path);
-			if ($actualPerm === false) {
-				$this->warn(sprintf('Unable to determine permissions for %s' . PHP_EOL, $path));
-
-				return;
-			}
 
 			// `fileperms` also returns the higher bits of the inode mode.
 			// Hence, we must AND it with 07777 to only get what we are
@@ -141,6 +143,8 @@ class FixPermissions extends Command
 					}
 				}
 			}
+		} catch (FilesystemException) {
+			$this->warn(sprintf('Unable to determine permissions for %s' . PHP_EOL, $path));
 		} catch (\Exception $e) {
 			$this->error($e->getMessage());
 		}

@@ -1,20 +1,28 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Relations;
 
-use App\Contracts\InternalLycheeException;
-use App\DTO\SortingCriterion;
+use App\Contracts\Exceptions\InternalLycheeException;
+use App\Eloquent\FixedQueryBuilder;
+use App\Enum\OrderSortingType;
 use App\Exceptions\Internal\InvalidOrderDirectionException;
 use App\Models\Album;
-use App\Models\Extensions\FixedQueryBuilder;
 use App\Models\Extensions\SortingDecorator;
 use App\Models\Photo;
 use App\Policies\PhotoQueryPolicy;
-use Doctrine\Instantiator\Exception\InvalidArgumentException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\InvalidCastException;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @extends HasManyBidirectionally<Photo,Album>
+ */
 class HasManyChildPhotos extends HasManyBidirectionally
 {
 	protected PhotoQueryPolicy $photoQueryPolicy;
@@ -35,6 +43,9 @@ class HasManyChildPhotos extends HasManyBidirectionally
 		);
 	}
 
+	/**
+	 * @return FixedQueryBuilder<Photo>
+	 */
 	protected function getRelationQuery(): FixedQueryBuilder
 	{
 		/**
@@ -42,6 +53,7 @@ class HasManyChildPhotos extends HasManyBidirectionally
 		 * because it was set in the constructor as `Photo::query()`.
 		 *
 		 * @noinspection PhpIncompatibleReturnTypeInspection
+		 *
 		 * @phpstan-ignore-next-line
 		 */
 		return $this->query;
@@ -54,7 +66,6 @@ class HasManyChildPhotos extends HasManyBidirectionally
 		 * because it was set in the constructor as `$owningAlbum`.
 		 *
 		 * @noinspection PhpIncompatibleReturnTypeInspection
-		 * @phpstan-ignore-next-line
 		 */
 		return $this->parent;
 	}
@@ -71,6 +82,8 @@ class HasManyChildPhotos extends HasManyBidirectionally
 	}
 
 	/**
+	 * @param Album[] $models
+	 *
 	 * @throws InternalLycheeException
 	 */
 	public function addEagerConstraints(array $models)
@@ -80,19 +93,24 @@ class HasManyChildPhotos extends HasManyBidirectionally
 	}
 
 	/**
+	 * @return Collection<int,Photo>
+	 *
 	 * @throws InvalidOrderDirectionException
 	 */
-	public function getResults()
+	public function getResults(): Collection
 	{
 		if (is_null($this->getParentKey())) {
 			return $this->related->newCollection();
 		}
 
-		$albumSorting = $this->getParent()->getEffectiveSorting();
+		$albumSorting = $this->getParent()->getEffectivePhotoSorting();
 
-		return (new SortingDecorator($this->query))
-			->orderBy(
-				'photos.' . $albumSorting->column,
+		/** @var SortingDecorator<Photo> */
+		$sortingDecorator = new SortingDecorator($this->query);
+
+		return $sortingDecorator
+			->orderPhotosBy(
+				$albumSorting->column,
 				$albumSorting->order
 			)
 			->get();
@@ -101,13 +119,12 @@ class HasManyChildPhotos extends HasManyBidirectionally
 	/**
 	 * Match the eagerly loaded results to their parents.
 	 *
-	 * @param array      $models   an array of parent models
-	 * @param Collection $results  the unified collection of all child models of all parent models
-	 * @param string     $relation the name of the relation from the parent to the child models
+	 * @param Album[]               $models   an array of parent models
+	 * @param Collection<int,Photo> $results  the unified collection of all child models of all parent models
+	 * @param string                $relation the name of the relation from the parent to the child models
 	 *
-	 * @return array
+	 * @return array<int,Album>
 	 *
-	 * @throws InvalidArgumentException
 	 * @throws \LogicException
 	 * @throws InvalidCastException
 	 */
@@ -121,14 +138,14 @@ class HasManyChildPhotos extends HasManyBidirectionally
 		/** @var Album $model */
 		foreach ($models as $model) {
 			if (isset($dictionary[$key = $this->getDictionaryKey($model->getAttribute($this->localKey))])) {
-				/** @var Collection $childrenOfModel */
+				/** @var Collection<int,Photo> $childrenOfModel */
 				$childrenOfModel = $this->getRelationValue($dictionary, $key, 'many');
-				$sorting = $model->getEffectiveSorting();
+				$sorting = $model->getEffectivePhotoSorting();
 				$childrenOfModel = $childrenOfModel
 					->sortBy(
-						$sorting->column,
+						$sorting->column->value,
 						in_array($sorting->column, SortingDecorator::POSTPONE_COLUMNS, true) ? SORT_NATURAL | SORT_FLAG_CASE : SORT_REGULAR,
-						$sorting->order === SortingCriterion::DESC
+						$sorting->order === OrderSortingType::DESC
 					)
 					->values();
 				$model->setRelation($relation, $childrenOfModel);

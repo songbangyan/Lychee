@@ -1,5 +1,11 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\ModelFunctions;
 
 use App\Exceptions\Internal\LycheeAssertionError;
@@ -21,11 +27,16 @@ class MOVFormat extends DefaultVideo
 			$this
 				->setAudioCodec(self::FFMPEG_AUDIO_CODEC_ID)
 				->setVideoCodec(self::FFMPEG_VIDEO_CODEC_ID);
+			// @codeCoverageIgnoreStart
 		} catch (InvalidArgumentException $e) {
 			throw LycheeAssertionError::createFromUnexpectedException($e);
 		}
+		// @codeCoverageIgnoreEnd
 	}
 
+	/**
+	 * @codeCoverageIgnore
+	 */
 	public function supportBFrames(): bool
 	{
 		return false;
@@ -51,11 +62,17 @@ class MOVFormat extends DefaultVideo
 		return ['-f', self::FFMPEG_CONTAINER_ID];
 	}
 
+	/**
+	 * @return string[]
+	 */
 	public function getAvailableAudioCodecs(): array
 	{
 		return [self::FFMPEG_AUDIO_CODEC_ID];
 	}
 
+	/**
+	 * @return string[]
+	 */
 	public function getAvailableVideoCodecs(): array
 	{
 		return [self::FFMPEG_VIDEO_CODEC_ID];

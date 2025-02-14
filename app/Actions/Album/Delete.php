@@ -1,26 +1,33 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Actions\Album;
 
 use App\Actions\Photo\Delete as PhotoDelete;
-use App\Contracts\InternalLycheeException;
+use App\Constants\AccessPermissionConstants as APC;
+use App\Contracts\Exceptions\InternalLycheeException;
+use App\Enum\SmartAlbumType;
+use App\Enum\StorageDiskType;
 use App\Exceptions\Internal\LycheeAssertionError;
 use App\Exceptions\Internal\QueryBuilderException;
 use App\Exceptions\ModelDBException;
 use App\Exceptions\UnauthenticatedException;
 use App\Image\FileDeleter;
+use App\Models\AccessPermission;
 use App\Models\Album;
 use App\Models\BaseAlbumImpl;
 use App\Models\TagAlbum;
-use App\Policies\UserPolicy;
 use App\SmartAlbums\UnsortedAlbum;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Query\Builder as BaseBuilder;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Gate;
 use Safe\Exceptions\ArrayException;
-use function Safe\usort;
 
 /**
  * Deletes the albums with the designated IDs **efficiently**.
@@ -75,7 +82,7 @@ class Delete extends Action
 			// because it provides deletion of photos
 			if (in_array(UnsortedAlbum::ID, $albumIDs, true)) {
 				$query = UnsortedAlbum::getInstance()->photos();
-				if (!Gate::check(UserPolicy::IS_ADMIN)) {
+				if (Auth::user()?->may_administrate !== true) {
 					$query->where('owner_id', '=', Auth::id() ?? throw new UnauthenticatedException());
 				}
 				$unsortedPhotoIDs = $query->pluck('id')->all();
@@ -85,7 +92,7 @@ class Delete extends Action
 			// find all photos in those and their descendants
 			// Only load necessary attributes for tree; in particular avoid
 			// loading expensive `min_taken_at` and `max_taken_at`.
-			/** @var Collection<Album> $albums */
+			/** @var Collection<int,Album> $albums */
 			$albums = Album::query()
 				->without(['cover', 'thumb'])
 				->select(['id', 'parent_id', '_lft', '_rgt', 'track_short_path'])
@@ -97,15 +104,17 @@ class Delete extends Action
 			/** @var Album $album */
 			foreach ($albums as $album) {
 				// Collect all (aka recursive) sub-albums in each album
-				$subAlbums = $album->descendants()->select(['id', 'track_short_path'])->get();
+				$subAlbums = $album->descendants()->without(['cover', 'thumb'])->select(['id', 'track_short_path'])->get();
 				$recursiveAlbumIDs = array_merge($recursiveAlbumIDs, $subAlbums->pluck('id')->all());
 				$recursiveAlbumTracks = $recursiveAlbumTracks->merge($subAlbums->pluck('track_short_path'));
 			}
+			// prune the null values
+			$recursiveAlbumTracks = $recursiveAlbumTracks->filter(fn ($val) => $val !== null);
 
 			// Delete the photos from DB and obtain the list of files which need
 			// to be deleted later
 			$fileDeleter = (new PhotoDelete())->do($unsortedPhotoIDs, $recursiveAlbumIDs);
-			$fileDeleter->addRegularFiles($recursiveAlbumTracks);
+			$fileDeleter->addFiles($recursiveAlbumTracks, StorageDiskType::LOCAL->value);
 
 			// Remove the sub-forest spanned by the regular albums
 			$this->deleteSubForest($albums);
@@ -122,7 +131,20 @@ class Delete extends Action
 				$baseBuilder->from('tag_albums')->whereColumn('tag_albums.id', '=', 'base_albums.id');
 			})->delete();
 
+			// We also delete the permissions & sharing.
+			// Note that we explicitly avoid the smart albums.
+			AccessPermission::query()
+				->whereNotExists(function (BaseBuilder $baseBuilder) {
+					$baseBuilder->from('albums')->whereColumn('albums.id', '=', APC::ACCESS_PERMISSIONS . '.' . APC::BASE_ALBUM_ID);
+				})
+				->whereNotExists(function (BaseBuilder $baseBuilder) {
+					$baseBuilder->from('tag_albums')->whereColumn('tag_albums.id', '=', APC::ACCESS_PERMISSIONS . '.' . APC::BASE_ALBUM_ID);
+				})
+				->whereNotIn(APC::ACCESS_PERMISSIONS . '.' . APC::BASE_ALBUM_ID, SmartAlbumType::values())
+				->delete();
+
 			return $fileDeleter;
+			// @codeCoverageIgnoreStart
 		} catch (QueryBuilderException|InternalLycheeException $e) {
 			try {
 				// if anything goes wrong, don't leave the tree in an inconsistent state
@@ -140,6 +162,7 @@ class Delete extends Action
 			}
 			throw LycheeAssertionError::createFromUnexpectedException($e);
 		}
+		// @codeCoverageIgnoreEnd
 	}
 
 	/**
@@ -165,7 +188,7 @@ class Delete extends Action
 	 * The latter is more efficient, because we do not reload models
 	 * from the DB.
 	 *
-	 * @param Collection<Album> $albums
+	 * @param Collection<int,Album> $albums
 	 *
 	 * @return void
 	 *

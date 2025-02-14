@@ -1,16 +1,19 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-class DropAdminUserConfig extends Migration
-{
+return new class() extends Migration {
 	/**
 	 * Run the migrations.
-	 *
-	 * @return void
 	 */
-	public function up()
+	public function up(): void
 	{
 		DB::table('configs')
 			->whereIn('key', ['username', 'password'])
@@ -19,10 +22,8 @@ class DropAdminUserConfig extends Migration
 
 	/**
 	 * Reverse the migrations.
-	 *
-	 * @return void
 	 */
-	public function down()
+	public function down(): void
 	{
 		defined('STRING_REQ') or define('STRING_REQ', 'string_required');
 
@@ -44,4 +45,4 @@ class DropAdminUserConfig extends Migration
 		]
 		);
 	}
-}
+};

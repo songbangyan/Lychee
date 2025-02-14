@@ -1,8 +1,16 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Image;
 
+use App\Contracts\Image\StreamStats;
 use App\Exceptions\MediaFileOperationException;
+use App\Image\Files\NativeLocalFile;
 
 /**
  * Class `StreamStat` holds statistics about a read/written (image) stream.
@@ -14,7 +22,7 @@ use App\Exceptions\MediaFileOperationException;
  * This class provides these values which are collected while the stream
  * is "on the fly".
  */
-class StreamStat
+class StreamStat implements StreamStats
 {
 	public int $bytes;
 	public string $checksum;
@@ -45,13 +53,17 @@ class StreamStat
 			error_clear_last();
 			$checksum = hash_file(StreamStatFilter::HASH_ALGO_NAME, $file->getPath());
 			if ($checksum === false) {
+				// @codeCoverageIgnoreStart
 				$error = error_get_last();
 				throw new \ErrorException($error['message'] ?? 'An error occurred', 0, $error['type'] ?? 1);
+				// @codeCoverageIgnoreEnd
 			}
 
 			return new StreamStat($file->getFilesize(), $checksum);
+			// @codeCoverageIgnoreStart
 		} catch (\ErrorException $e) {
 			throw new MediaFileOperationException($e->getMessage(), $e);
 		}
+		// @codeCoverageIgnoreEnd
 	}
 }

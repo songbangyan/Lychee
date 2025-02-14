@@ -1,19 +1,29 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Relations;
 
-use App\Contracts\InternalLycheeException;
-use App\DTO\SortingCriterion;
+use App\Contracts\Exceptions\InternalLycheeException;
+use App\Enum\OrderSortingType;
 use App\Exceptions\Internal\NotImplementedException;
 use App\Models\Album;
 use App\Models\Extensions\SortingDecorator;
-use App\Models\Photo;
 use App\Policies\AlbumPolicy;
 use App\Policies\AlbumQueryPolicy;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Gate;
 
-class HasManyPhotosRecursively extends HasManyPhotos
+/**
+ * @disregard
+ *
+ * @extends BaseHasManyPhotos<Album>
+ */
+class HasManyPhotosRecursively extends BaseHasManyPhotos
 {
 	protected AlbumQueryPolicy $albumQueryPolicy;
 
@@ -34,7 +44,6 @@ class HasManyPhotosRecursively extends HasManyPhotos
 		 * because it was set in the constructor as `$owningAlbum`.
 		 *
 		 * @noinspection PhpIncompatibleReturnTypeInspection
-		 * @phpstan-ignore-next-line
 		 */
 		return $this->parent;
 	}
@@ -75,9 +84,16 @@ class HasManyPhotosRecursively extends HasManyPhotos
 		}
 
 		$this->photoQueryPolicy
-			->applySearchabilityFilter($this->getRelationQuery(), $albums[0]);
+			->applySearchabilityFilter(
+				query: $this->getRelationQuery(),
+				origin: $albums[0],
+				include_nsfw: true
+			);
 	}
 
+	/**
+	 * @return Collection<int,\App\Models\Photo>
+	 */
 	public function getResults(): Collection
 	{
 		/** @var Album|null $album */
@@ -95,11 +111,11 @@ class HasManyPhotosRecursively extends HasManyPhotos
 	 * This method is called by the framework after the unified result of
 	 * photos has been fetched by {@link HasManyPhotosRecursively::addEagerConstraints()}.
 	 *
-	 * @param array      $albums   the list of owning albums
-	 * @param Collection $photos   collection of {@link Photo} models which needs to be mapped to the albums
-	 * @param string     $relation the name of the relation
+	 * @param Album[]                           $albums   the list of owning albums
+	 * @param Collection<int,\App\Models\Photo> $photos   collection of {@link Photo} models which needs to be mapped to the albums
+	 * @param string                            $relation the name of the relation
 	 *
-	 * @return array
+	 * @return array<int,Album>
 	 *
 	 * @throws NotImplementedException
 	 */
@@ -114,11 +130,11 @@ class HasManyPhotosRecursively extends HasManyPhotos
 		if (!Gate::check(AlbumPolicy::CAN_ACCESS, $album)) {
 			$album->setRelation($relation, $this->related->newCollection());
 		} else {
-			$sorting = $album->getEffectiveSorting();
+			$sorting = $album->getEffectivePhotoSorting();
 			$photos = $photos->sortBy(
-				$sorting->column,
+				$sorting->column->value,
 				in_array($sorting->column, SortingDecorator::POSTPONE_COLUMNS, true) ? SORT_NATURAL | SORT_FLAG_CASE : SORT_REGULAR,
-				$sorting->order === SortingCriterion::DESC
+				$sorting->order === OrderSortingType::DESC
 			)->values();
 			$album->setRelation($relation, $photos);
 		}

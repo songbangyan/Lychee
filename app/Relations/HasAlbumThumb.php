@@ -1,27 +1,36 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Relations;
 
 use App\DTO\PhotoSortingCriterion;
+use App\Eloquent\FixedQueryBuilder;
+use App\Enum\ColumnSortingPhotoType;
+use App\Enum\OrderSortingType;
 use App\Models\Album;
-use App\Models\Extensions\FixedQueryBuilder;
 use App\Models\Extensions\Thumb;
 use App\Models\Photo;
 use App\Policies\AlbumPolicy;
 use App\Policies\AlbumQueryPolicy;
 use App\Policies\PhotoQueryPolicy;
-use App\Policies\UserPolicy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Query\Builder as BaseBuilder;
-use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
 /**
- * @mixin Builder
+ * @mixin Builder<Photo>
+ *
+ * @extends Relation<Photo,Album,Thumb|null>
+ *
+ * @disregard P1037
  */
 class HasAlbumThumb extends Relation
 {
@@ -39,11 +48,14 @@ class HasAlbumThumb extends Relation
 		$this->photoQueryPolicy = resolve(PhotoQueryPolicy::class);
 		$this->sorting = PhotoSortingCriterion::createDefault();
 		parent::__construct(
-			Photo::query()->with(['size_variants' => fn (HasMany $r) => Thumb::sizeVariantsFilter($r)]),
+			Photo::query()->with(['size_variants' => (fn ($r) => Thumb::sizeVariantsFilter($r))]),
 			$parent
 		);
 	}
 
+	/**
+	 * @return FixedQueryBuilder<Photo>
+	 */
 	protected function getRelationQuery(): FixedQueryBuilder
 	{
 		/**
@@ -51,6 +63,7 @@ class HasAlbumThumb extends Relation
 		 * because it was set in the constructor as `Photo::query()`.
 		 *
 		 * @noinspection PhpIncompatibleReturnTypeInspection
+		 *
 		 * @phpstan-ignore-next-line
 		 */
 		return $this->query;
@@ -73,7 +86,10 @@ class HasAlbumThumb extends Relation
 				$this->where('photos.id', '=', $album->cover_id);
 			} else {
 				$this->photoQueryPolicy
-					->applySearchabilityFilter($this->getRelationQuery(), $album);
+					->applySearchabilityFilter(
+						query: $this->getRelationQuery(),
+						origin: $album,
+						include_nsfw: $album->is_nsfw);
 			}
 		}
 	}
@@ -114,7 +130,7 @@ class HasAlbumThumb extends Relation
 	 *     ON (
 	 *       albums._lft >= covered_albums._lft AND
 	 *       albums._rgt <= covered_albums._rgt AND
-	 *       "complicated seachability filter goes here"
+	 *       "complicated searchability filter goes here"
 	 *     )
 	 *     WHERE covered_albums.id IN $albumKeys
 	 *     ORDER BY album_id ASC, photos.is_starred DESC, photos.created_at DESC
@@ -177,10 +193,11 @@ class HasAlbumThumb extends Relation
 			->join('albums', 'albums.id', '=', 'photos.album_id')
 			->whereColumn('albums._lft', '>=', 'covered_albums._lft')
 			->whereColumn('albums._rgt', '<=', 'covered_albums._rgt')
-			->orderBy('photos.is_starred', 'desc')
-			->orderBy('photos.' . $this->sorting->column, $this->sorting->order)
+			->orderBy('photos.' . ColumnSortingPhotoType::IS_STARRED->value, OrderSortingType::DESC->value)
+			->orderBy('photos.' . $this->sorting->column->value, $this->sorting->order->value)
 			->limit(1);
-		if (!Gate::check(UserPolicy::IS_ADMIN)) {
+
+		if (Auth::user()?->may_administrate !== true) {
 			$bestPhotoIDSelect->where(function (Builder $query2) {
 				$this->photoQueryPolicy->appendSearchabilityConditions(
 					$query2->getQuery(),
@@ -190,26 +207,20 @@ class HasAlbumThumb extends Relation
 			});
 		}
 
-		$user = Auth::user();
-
-		$album2Cover = function (BaseBuilder $builder) use ($bestPhotoIDSelect, $albumKeys, $user) {
+		$album2Cover = function (BaseBuilder $builder) use ($bestPhotoIDSelect, $albumKeys) {
 			$builder
 				->from('albums as covered_albums')
 				->join('base_albums', 'base_albums.id', '=', 'covered_albums.id');
-			if ($user !== null) {
-				$builder->leftJoin(
-					'user_base_album',
-					function (JoinClause $join) use ($user) {
-						$join
-							->on('user_base_album.base_album_id', '=', 'base_albums.id')
-							->where('user_base_album.user_id', '=', $user->id);
-					}
-				);
-			}
+
+			$this->albumQueryPolicy->joinSubComputedAccessPermissions(
+				query: $builder,
+				second: 'base_albums.id'
+			);
+
 			$builder->select(['covered_albums.id AS album_id'])
 				->addSelect(['photo_id' => $bestPhotoIDSelect])
 				->whereIn('covered_albums.id', $albumKeys);
-			if (!Gate::check(UserPolicy::IS_ADMIN)) {
+			if (Auth::user()?->may_administrate !== true) {
 				$builder->where(function (BaseBuilder $q) {
 					$this->albumQueryPolicy->appendAccessibilityConditions($q);
 				});
@@ -232,10 +243,10 @@ class HasAlbumThumb extends Relation
 	}
 
 	/**
-	 * @param array<Album> $models   an array of albums models whose thumbnails shall be initialized
-	 * @param string       $relation the name of the relation from the parent to the child models
+	 * @param array<int,Album> $models   an array of albums models whose thumbnails shall be initialized
+	 * @param string           $relation the name of the relation from the parent to the child models
 	 *
-	 * @return array the array of album models
+	 * @return array<int,Album> the array of album models
 	 */
 	public function initRelation(array $models, $relation): array
 	{
@@ -249,15 +260,16 @@ class HasAlbumThumb extends Relation
 	/**
 	 * Match the eagerly loaded results to their parents.
 	 *
-	 * @param array<Album> $models   an array of parent models
-	 * @param Collection   $results  the unified collection of all child models of all parent models
-	 * @param string       $relation the name of the relation from the parent to the child models
+	 * @param array<int,Album>      $models   an array of parent models
+	 * @param Collection<int,Photo> $results  the unified collection of all child models of all parent models
+	 * @param string                $relation the name of the relation from the parent to the child models
 	 *
-	 * @return array
+	 * @return array<int,Album>
 	 */
 	public function match(array $models, Collection $results, $relation): array
 	{
 		$dictionary = $results->mapToDictionary(function ($result) {
+			/** @phpstan-ignore-next-line undefied property */
 			return [$result->covered_album_id => $result];
 		})->all();
 

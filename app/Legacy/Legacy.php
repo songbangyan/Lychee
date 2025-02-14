@@ -1,20 +1,26 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Legacy;
 
 use App\Exceptions\ConfigurationException;
 use App\Exceptions\Internal\QueryBuilderException;
 use App\Models\Configs;
-use App\Models\Logs;
 use App\Rules\IntegerIDRule;
 use App\Rules\RandomIDRule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Stuff we need to delete in the future.
  */
-class Legacy
+final class Legacy
 {
 	public static function isLegacyModelID(string $id): bool
 	{
@@ -49,23 +55,27 @@ class Legacy
 
 			if ($newID !== '') {
 				$referer = strval($request->header('Referer', '(unknown)'));
-				$msg = 'Request for ' . $tableName .
+				$msg = ' Request for ' . $tableName .
 					' with legacy ID ' . $id .
 					' instead of new ID ' . $newID .
 					' from ' . $referer;
 				if (!Configs::getValueAsBool('legacy_id_redirection')) {
+					// @codeCoverageIgnoreStart
 					$msg .= ' (translation disabled by configuration)';
 					throw new ConfigurationException($msg);
+					// @codeCoverageIgnoreEnd
 				}
-				Logs::warning(__METHOD__, __LINE__, $msg);
+				Log::warning(__METHOD__ . ':' . __LINE__ . $msg);
 
 				return $newID;
 			}
 
+			// @codeCoverageIgnoreStart
 			return null;
 		} catch (\InvalidArgumentException $e) {
 			throw new QueryBuilderException($e);
 		}
+		// @codeCoverageIgnoreEnd
 	}
 
 	/**

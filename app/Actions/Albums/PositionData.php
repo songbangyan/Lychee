@@ -1,15 +1,19 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Actions\Albums;
 
-use App\Contracts\InternalLycheeException;
-use App\DTO\PositionData as PositionDataDTO;
+use App\Contracts\Exceptions\InternalLycheeException;
+use App\Enum\SizeVariantType;
+use App\Http\Resources\Collections\PositionDataResource;
 use App\Models\Configs;
 use App\Models\Photo;
-use App\Models\SizeVariant;
 use App\Policies\PhotoQueryPolicy;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PositionData
 {
@@ -25,37 +29,39 @@ class PositionData
 	/**
 	 * Given a list of albums, generate an array to be returned.
 	 *
-	 * @return PositionDataDTO
+	 * @return PositionDataResource
 	 *
 	 * @throws InternalLycheeException
 	 */
-	public function do(): PositionDataDTO
+	public function do(): PositionDataResource
 	{
 		$photoQuery = $this->photoQueryPolicy->applySearchabilityFilter(
-			Photo::query()
+			query: Photo::query()
 				->with([
-					'album' => function (BelongsTo $b) {
+					'album' => function ($b) {
 						// The album is required for photos to properly
 						// determine access and visibility rights; but we
 						// don't need to determine the cover and thumbnail for
 						// each album
 						$b->without(['cover', 'thumb']);
 					},
-					'size_variants' => function (HasMany $r) {
+					'size_variants' => function ($r) {
 						// The web GUI only uses the small and thumb size
 						// variants to show photos on a map; so we can save
 						// hydrating the larger size variants
 						// this really helps, if you want to show thousands
 						// of photos on a map, as there are up to 7 size
 						// variants per photo
-						$r->whereBetween('type', [SizeVariant::SMALL2X, SizeVariant::THUMB]);
+						$r->whereBetween('type', [SizeVariantType::SMALL2X, SizeVariantType::THUMB]);
 					},
 					'size_variants.sym_links',
 				])
 				->whereNotNull('latitude')
-				->whereNotNull('longitude')
+				->whereNotNull('longitude'),
+			origin: null,
+			include_nsfw: !Configs::getValueAsBool('hide_nsfw_in_map')
 		);
 
-		return new PositionDataDTO(null, null, $photoQuery->get(), null);
+		return new PositionDataResource(null, null, $photoQuery->get(), null);
 	}
 }

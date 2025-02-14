@@ -1,5 +1,11 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2025 LycheeOrg.
+ */
+
 namespace App\Image;
 
 /**
@@ -9,7 +15,7 @@ class StreamStatFilter extends \php_user_filter
 {
 	public const REGISTERED_NAME = 'stream-stat-filter';
 
-	/** @var string the used hashing algorithm; value must be supported by PHP, see {@link hash_algos()} */
+	/** @var string HASH_ALGO_NAME the used hashing algorithm; value must be supported by PHP, see {@link hash_algos()} */
 	public const HASH_ALGO_NAME = 'sha1';
 
 	/** @var \HashContext|null the hash context for progressive hashing */
