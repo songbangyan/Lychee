@@ -276,6 +276,7 @@ declare namespace App.Http.Resources.GalleryConfigs {
 		is_se_info_hidden: boolean;
 		is_live_metrics_enabled: boolean;
 		is_registration_enabled: boolean;
+		default_homepage: string;
 	};
 	export type LandingPageResource = {
 		landing_page_enable: boolean;
@@ -306,7 +307,6 @@ declare namespace App.Http.Resources.GalleryConfigs {
 		is_search_accessible: boolean;
 		show_keybinding_help_button: boolean;
 		album_thumb_css_aspect_ratio: App.Enum.AspectRatioType;
-		login_button_position: string;
 		back_button_enabled: boolean;
 		back_button_text: string;
 		back_button_url: string;
@@ -369,6 +369,13 @@ declare namespace App.Http.Resources.Models {
 		download_count: number;
 		shared_count: number;
 	};
+	export type ColourPaletteResource = {
+		colour_1: string;
+		colour_2: string;
+		colour_3: string;
+		colour_4: string;
+		colour_5: string;
+	};
 	export type ConfigCategoryResource = {
 		cat: string;
 		name: string;
@@ -402,8 +409,8 @@ declare namespace App.Http.Resources.Models {
 		visitor_id: string;
 		action: App.Enum.MetricsAction;
 		photo_id: string | null;
-		album_id: string | null;
-		title: string | null;
+		album_id: string;
+		title: string;
 		url: string | null;
 	};
 	export type PhotoResource = {
@@ -442,6 +449,7 @@ declare namespace App.Http.Resources.Models {
 		preformatted: App.Http.Resources.Models.Utils.PreformattedPhotoData;
 		precomputed: App.Http.Resources.Models.Utils.PreComputedPhotoData;
 		timeline: App.Http.Resources.Models.Utils.TimelineData | null;
+		palette: App.Http.Resources.Models.ColourPaletteResource | null;
 		statistics: App.Http.Resources.Models.PhotoStatisticsResource | null;
 	};
 	export type PhotoStatisticsResource = {

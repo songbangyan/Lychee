@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::get('/LandingPage', [LandingPageController::class, '__invoke']);
+Route::get('/LandingPage', LandingPageController::class);
 Route::get('/Frame', [Gallery\FrameController::class, 'get']);
 
 Route::get('/Gallery::Init', [Gallery\ConfigController::class, 'getInit']);
@@ -237,6 +237,8 @@ Route::get('/Maintenance::countDuplicates', [Admin\Maintenance\DuplicateFinder::
 Route::get('/Maintenance::searchDuplicates', [Admin\Maintenance\DuplicateFinder::class, 'get']);
 Route::get('/Maintenance::statisticsIntegrity', [Admin\Maintenance\StatisticsCheck::class, 'check']);
 Route::post('/Maintenance::statisticsIntegrity', [Admin\Maintenance\StatisticsCheck::class, 'do']);
+Route::get('/Maintenance::missingPalettes', [Admin\Maintenance\MissingPalettes::class, 'check']);
+Route::post('/Maintenance::missingPalettes', [Admin\Maintenance\MissingPalettes::class, 'do']);
 
 /**
  * STATISTICS.

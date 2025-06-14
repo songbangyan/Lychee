@@ -8,6 +8,7 @@
 
 namespace App\Http\Resources\Models;
 
+use App\Contracts\Models\AbstractAlbum;
 use App\Enum\LicenseType;
 use App\Http\Resources\Models\Utils\PreComputedPhotoData;
 use App\Http\Resources\Models\Utils\PreformattedPhotoData;
@@ -61,15 +62,16 @@ class PhotoResource extends Data
 	public PreformattedPhotoData $preformatted;
 	public PreComputedPhotoData $precomputed;
 	public ?TimelineData $timeline = null;
+	public ?ColourPaletteResource $palette = null;
 
 	private Carbon $timeline_data_carbon;
 
 	public ?PhotoStatisticsResource $statistics = null;
 
-	public function __construct(Photo $photo)
+	public function __construct(Photo $photo, ?AbstractAlbum $album)
 	{
 		$this->id = $photo->id;
-		$this->album_id = $photo->album_id;
+		$this->album_id = $album?->get_id() ?? null;
 		$this->altitude = $photo->altitude;
 		$this->aperture = $photo->aperture;
 		$this->checksum = $photo->checksum;
@@ -90,18 +92,19 @@ class PhotoResource extends Data
 		$this->model = $photo->model;
 		$this->original_checksum = $photo->original_checksum;
 		$this->shutter = $photo->shutter;
-		$this->size_variants = new SizeVariantsResouce($photo);
+		$this->size_variants = new SizeVariantsResouce($photo, $album);
 		$this->tags = $photo->tags;
 		$this->taken_at = $photo->taken_at?->toIso8601String();
 		$this->taken_at_orig_tz = $photo->taken_at_orig_tz;
 		$this->title = (Configs::getValueAsBool('file_name_hidden') && Auth::guest()) ? '' : $photo->title;
 		$this->type = $photo->type;
 		$this->updated_at = $photo->updated_at->toIso8601String();
-		$this->rights = new PhotoRightsResource($photo);
+		$this->rights = new PhotoRightsResource($album);
 		$this->next_photo_id = null;
 		$this->previous_photo_id = null;
 		$this->preformatted = new PreformattedPhotoData($photo, $this->size_variants->original);
 		$this->precomputed = new PreComputedPhotoData($photo);
+		$this->palette = ColourPaletteResource::fromModel($photo->palette);
 
 		$this->timeline_data_carbon = $photo->taken_at ?? $photo->created_at;
 
@@ -110,10 +113,10 @@ class PhotoResource extends Data
 		}
 	}
 
-	public static function fromModel(Photo $photo): PhotoResource
-	{
-		return new self($photo);
-	}
+	// public static function fromModel(Photo $photo): PhotoResource
+	// {
+	// 	return new self($photo);
+	// }
 
 	private function setLocation(Photo $photo): void
 	{

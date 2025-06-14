@@ -13,6 +13,7 @@ export type PhotoUpdateRequest = {
 export type PhotoMove = {
 	photo_ids: string[];
 	album_id: string | null;
+	from_id: string | null;
 };
 
 const PhotoService = {
@@ -44,8 +45,8 @@ const PhotoService = {
 		return axios.post(`${Constants.getApiUrl()}Photo::copy`, { album_id: destination_id, photo_ids: photo_ids });
 	},
 
-	delete(photo_ids: string[]): Promise<AxiosResponse> {
-		return axios.delete(`${Constants.getApiUrl()}Photo`, { data: { photo_ids: photo_ids } });
+	delete(photo_ids: string[], from_id: string): Promise<AxiosResponse> {
+		return axios.delete(`${Constants.getApiUrl()}Photo`, { data: { photo_ids: photo_ids, from_id: from_id } });
 	},
 
 	star(photo_ids: string[], is_starred: boolean): Promise<AxiosResponse> {
@@ -68,8 +69,8 @@ const PhotoService = {
 		return axios.post(`${Constants.getApiUrl()}Album::header`, { header_id: photo_id, album_id: album_id, is_compact: is_compact });
 	},
 
-	download(photo_ids: string[], download_type: App.Enum.DownloadVariantType = "ORIGINAL"): void {
-		location.href = `${Constants.getApiUrl()}Zip?photo_ids=${photo_ids.join(",")}&variant=${download_type}`;
+	download(photo_ids: string[], from_id: string | undefined, download_type: App.Enum.DownloadVariantType = "ORIGINAL"): void {
+		location.href = `${Constants.getApiUrl()}Zip?photo_ids=${photo_ids.join(",")}&variant=${download_type}&from_id=${from_id ?? null}`;
 	},
 };
 

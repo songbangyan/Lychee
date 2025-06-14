@@ -12,8 +12,10 @@ use App\Actions\Photo\Delete;
 use App\Casts\ArrayCast;
 use App\Casts\DateTimeWithTimezoneCast;
 use App\Casts\MustNotSetCast;
+use App\Constants\PhotoAlbum as PA;
 use App\Contracts\Models\HasUTCBasedTimes;
 use App\Enum\LicenseType;
+use App\Enum\SmartAlbumType;
 use App\Enum\StorageDiskType;
 use App\Exceptions\Internal\IllegalOrderOfOperationException;
 use App\Exceptions\Internal\LycheeAssertionError;
@@ -30,54 +32,57 @@ use App\Models\Extensions\ThrowsConsistentExceptions;
 use App\Models\Extensions\ToArrayThrowsNotImplemented;
 use App\Models\Extensions\UTCBasedTimes;
 use App\Relations\HasManySizeVariants;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use function Safe\preg_match;
 
 /**
  * App\Models\Photo.
  *
- * @property string       $id
- * @property string       $title
- * @property string|null  $description
- * @property string[]     $tags
- * @property int          $owner_id
- * @property string|null  $type
- * @property string|null  $iso
- * @property string|null  $aperture
- * @property string|null  $make
- * @property string|null  $model
- * @property string|null  $lens
- * @property string|null  $shutter
- * @property string|null  $focal
- * @property float|null   $latitude
- * @property float|null   $longitude
- * @property float|null   $altitude
- * @property float|null   $img_direction
- * @property string|null  $location
- * @property Carbon|null  $taken_at
- * @property string|null  $taken_at_orig_tz
- * @property Carbon|null  $initial_taken_at
- * @property string|null  $initial_taken_at_orig_tz
- * @property bool         $is_starred
- * @property string|null  $live_photo_short_path
- * @property string|null  $live_photo_url
- * @property string|null  $album_id
- * @property string       $checksum
- * @property string       $original_checksum
- * @property LicenseType  $license
- * @property Carbon       $created_at
- * @property Carbon       $updated_at
- * @property string|null  $live_photo_content_id
- * @property string|null  $live_photo_checksum
- * @property Album|null   $album
- * @property User         $owner
- * @property SizeVariants $size_variants
- * @property int          $filesize
+ * @property string                $id
+ * @property string                $title
+ * @property string|null           $description
+ * @property string[]              $tags
+ * @property int                   $owner_id
+ * @property string|null           $type
+ * @property string|null           $iso
+ * @property string|null           $aperture
+ * @property string|null           $make
+ * @property string|null           $model
+ * @property string|null           $lens
+ * @property string|null           $shutter
+ * @property string|null           $focal
+ * @property float|null            $latitude
+ * @property float|null            $longitude
+ * @property float|null            $altitude
+ * @property float|null            $img_direction
+ * @property string|null           $location
+ * @property Carbon|null           $taken_at
+ * @property string|null           $taken_at_orig_tz
+ * @property Carbon|null           $initial_taken_at
+ * @property string|null           $initial_taken_at_orig_tz
+ * @property bool                  $is_starred
+ * @property string|null           $live_photo_short_path
+ * @property string|null           $live_photo_url
+ * @property string                $checksum
+ * @property string                $original_checksum
+ * @property LicenseType           $license
+ * @property Carbon                $created_at
+ * @property Carbon                $updated_at
+ * @property string|null           $live_photo_content_id
+ * @property string|null           $live_photo_checksum
+ * @property Collection<int,Album> $albums
+ * @property User                  $owner
+ * @property SizeVariants          $size_variants
+ * @property int                   $filesize
+ * @property Palette|null          $palette
  *
  * @method static PhotoBuilder|Photo addSelect($column)
  * @method static PhotoBuilder|Photo join(string $table, string $first, string $operator = null, string $second = null, string $type = 'inner', string $where = false)
@@ -175,10 +180,6 @@ class Photo extends Model implements HasUTCBasedTimes
 		'live_photo_short_path', // serialize live_photo_url instead
 	];
 
-	// protected $with = [
-	// 	'statistics',
-	// ];
-
 	public function newEloquentBuilder($query): PhotoBuilder
 	{
 		return new PhotoBuilder($query);
@@ -187,11 +188,11 @@ class Photo extends Model implements HasUTCBasedTimes
 	/**
 	 * Return the relationship between a Photo and its Album.
 	 *
-	 * @return BelongsTo<Album,$this>
+	 * @return BelongsToMany<Album,$this>
 	 */
-	public function album(): BelongsTo
+	public function albums(): BelongsToMany
 	{
-		return $this->belongsTo(Album::class, 'album_id', 'id');
+		return $this->belongsToMany(Album::class, PA::PHOTO_ALBUM, 'photo_id', 'album_id', 'id', 'id');
 	}
 
 	/**
@@ -217,6 +218,20 @@ class Photo extends Model implements HasUTCBasedTimes
 	public function statistics(): HasOne
 	{
 		return $this->hasOne(Statistics::class, 'photo_id', 'id');
+	}
+
+	/**
+	 * Returns the relationship between a photo and its associated color palette.
+	 *
+	 * This is a one-to-one relationship where each photo can have one palette
+	 * associated with it, which contains color information derived from the
+	 * photo.
+	 *
+	 * @return HasOne<Palette,$this>
+	 */
+	public function palette(): HasOne
+	{
+		return $this->hasOne(Palette::class, 'photo_id', 'id');
 	}
 
 	/**
@@ -296,9 +311,9 @@ class Photo extends Model implements HasUTCBasedTimes
 			return LicenseType::from($license);
 		}
 
-		if ($this->album_id !== null && $this->relationLoaded('album')) {
-			return $this->album->license;
-		}
+		// if ($this->album_id !== null && $this->relationLoaded('album')) {
+		// 	return $this->album->license;
+		// }
 
 		return Configs::getValueAsEnum('default_license', LicenseType::class);
 	}
@@ -418,32 +433,6 @@ class Photo extends Model implements HasUTCBasedTimes
 	}
 
 	/**
-	 * @param string[] $except
-	 *                         //method.childParameterType (contravariance)
-	 */
-	public function replicate(?array $except = null): Photo
-	{
-		$duplicate = parent::replicate($except);
-		// A photo has the following relations: (parent) album, owner and
-		// size_variants.
-		// While the duplicate may keep the relation to the same album and
-		// each photo requires an individual set of size variants.
-		// Se we unset the relation and explicitly duplicate the size variants.
-		$duplicate->unsetRelation('size_variants');
-		// save duplicate so that the photo gets an ID
-		$duplicate->save();
-
-		$are_size_variants_originally_loaded = $this->relationLoaded('size_variants');
-		// Duplicate the size variants of this instance for the duplicate
-		$duplicated_size_variants = $this->size_variants->replicate($duplicate);
-		if ($are_size_variants_originally_loaded) {
-			$duplicate->setRelation('size_variants', $duplicated_size_variants);
-		}
-
-		return $duplicate;
-	}
-
-	/**
 	 * {@inheritDoc}
 	 *
 	 * @throws ModelDBException
@@ -451,7 +440,10 @@ class Photo extends Model implements HasUTCBasedTimes
 	 */
 	protected function performDeleteOnModel(): void
 	{
-		$file_deleter = (new Delete())->do([$this->id]);
+		// Delete all the links to the photo.
+		DB::table(PA::PHOTO_ALBUM)->where('photo_id', $this->id)->delete();
+		// Clean up the files.
+		$file_deleter = (new Delete())->do([$this->id], SmartAlbumType::UNSORTED->value);
 		$this->exists = false;
 		$file_deleter->do();
 	}
